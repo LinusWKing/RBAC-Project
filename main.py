@@ -1,9 +1,5 @@
 from abc import ABC
-from faulthandler import disable
-from tkinter import W
-from numpy import size
 import pandas as pd
-
 import PySimpleGUI as sg
 
 
@@ -51,11 +47,118 @@ class User(ABC):
 
         return found, user
 
+    def interface(self, window, columns=None, accounts=None, account_id=None):
+
+        while True:
+            event, values = window.read()
+
+            if event == sg.WIN_CLOSED:
+                break
+            elif event == 'Print':
+                window['-OUTPUT-'].update(value='')
+                print(df.loc[:, columns])
+                if self.type == 'su' or self.type == 'admin':
+                    window['-COL-'].update(disabled=False)
+            elif event == '-PUPDATE-':
+                window['-ID-'].update(self.loginID)
+                window['-CPASSWD-'].update(self.password)
+                if values['-NPASSWD-']:
+                    self.password = values['-NPASSWD-']
+                    window['-CPASSWD-'].update(self.password)
+                else:
+                    sg.popup_quick("Error:Missing input!")
+            elif event == '-COMBO-':
+                window['-CNPASSWD-'].update(disabled=False)
+                for i in accounts:
+                    if(i.loginID == values['-COMBO-']):
+                        window['-CCPASSWD-'].update(i.password)
+            elif event == '-GUPDATE-':
+                if values['-CNPASSWD-']:
+                    for i in accounts:
+                        if(i.loginID == values['-COMBO-']):
+                            i.password = values['-CNPASSWD-']
+                            window['-CCPASSWD-'].update(i.password)
+                else:
+                    sg.popup_quick("Error: Missing input!")
+            elif event == 'Create':
+                if values['-CRID-'] and values['-CRPASSWD-']:
+                    id = values['-CRID-']
+                    passwd = values['-CRPASSWD-']
+
+                    if id not in account_id:
+                        if self.type == 'su':
+                            users.append(Client(id, passwd))
+                            for i in users:
+                                if (isinstance(i, Client) and i.loginID not in account_id):
+                                    accounts.append(i)
+                                    account_id.append(i.loginID)
+                        elif self.type == "admin":
+                            users.append(SuperUser(id, passwd))
+                            for i in users:
+                                if (isinstance(i, SuperUser) and i.loginID not in account_id):
+                                    accounts.append(i)
+                                    account_id.append(i.loginID)
+                    else:
+                        sg.popup_error("ID already exists")
+                        window['-CNPASSWD-'].update(disabled=True)
+                        window['-CCPASSWD-'].update(value='')
+                        continue
+
+                    window['-COMBO-'].update(values=account_id)
+                    sg.popup_quick_message('User created!')
+                    window['-CNPASSWD-'].update(disabled=True)
+                    window['-CCPASSWD-'].update(value='')
+                else:
+                    sg.popup_quick('Error: Missing input!')
+            elif event == 'Clear':
+                window['-CRID-'].update('')
+                window['-CRPASSWD-'].update('')
+            elif event == '-COL-':
+                window['-ROW-'].update(value='',
+                                       disabled=False)
+                window['-CVALUE-'].update('')
+            elif event == '-ROW-':
+
+                column = values['-COL-']
+                row = values['-ROW-']
+
+                value = df.at[row, column]
+
+                window['-CVALUE-'].update(value)
+                window['-NVALUE-'].update(disabled=False)
+                window['-UVALUE-'].update(disabled=False)
+            elif event == '-UVALUE-':
+                if values['-NVALUE-']:
+                    new_value = values['-NVALUE-']
+                    df.at[row, column] = new_value
+                    sg.popup_quick_message('Value updated successfully!')
+                    window['-OUTPUT-'].update(value='')
+                    print(df)
+
+                    window['-COL-'].update(value='')
+                    window['-ROW-'].update(value='')
+                    window['-CVALUE-'].update('')
+
+                else:
+                    sg.popup_quick_message('Error: Missing input!')
+            elif event == 'Save As':
+                try:
+                    filename = values['-SAVE-']
+                    df.to_csv(filename)
+                    sg.popup_quick('Succesfully saved!', keep_on_top=True)
+                except:
+                    sg.popup_quick('Error: File name missing!',
+                                   keep_on_top=True)
+            elif event == 'Logout':
+                window.close()
+                start()
+        window.close()
+
 
 class Guest(User):
 
     def __init__(self, loginID="", password="") -> None:
-        super().__init__(loginID, password, type='g')
+        super().__init__(loginID, password, type='guest')
 
     def login(self):
         columns = ['Product', 'S/Price']
@@ -64,26 +167,12 @@ class Guest(User):
 
         window = sg.Window('Login', layout=layout_guest)
 
-        while True:
-            event, _ = window.read()
-
-            if event == sg.WIN_CLOSED:
-                break
-
-            if event == 'Print':
-
-                print(df.loc[:, columns])
-
-            if event == 'Logout':
-                window.close()
-                start()
-
-        window.close()
+        User.interface(self, window, columns)
 
 
 class Client(User):
     def __init__(self, loginID, password) -> None:
-        super().__init__(loginID, password, type='c')
+        super().__init__(loginID, password, type='client')
 
     def login(self):
         columns = ['Product', 'S/Price', 'Discounts']
@@ -94,7 +183,7 @@ class Client(User):
                 key='-CPASSWD-', size=(15, 1))],
             [sg.Text('New Password'), sg.In(
                 key='-NPASSWD-', do_not_clear=False)],
-            [sg.Button('Update')]]
+            [sg.Button('Update', key='-PUPDATE-')]]
         layout_client = [[sg.Output(size=(80, 40), key='-OUTPUT-',)],
                          [sg.Button('Print'), sg.Button('Logout')]]
 
@@ -103,36 +192,12 @@ class Client(User):
 
         window = sg.Window('Login', layout=tab_group)
 
-        while True:
-
-            event, values = window.read()
-            window['-ID-'].update(self.loginID)
-            window['-CPASSWD-'].update(self.password)
-
-            if event == sg.WIN_CLOSED:
-                break
-
-            if event == 'Print':
-                print(df.loc[:, columns])
-
-            if event == 'Update':
-
-                try:
-                    self.password = values['-NPASSWD-']
-                    window['-CPASSWD-'].update(self.password)
-                except:
-                    sg.popup_quick("Error!")
-
-            if event == 'Logout':
-                window.close()
-                start()
-
-        window.close()
+        User.interface(self, window, columns)
 
 
 class Admin(User):
     def __init__(self, loginID, password) -> None:
-        super().__init__(loginID, password, type='a')
+        super().__init__(loginID, password, type='admin')
 
     def login(self):
 
@@ -149,7 +214,7 @@ class Admin(User):
 
         frame_edit = [[sg.Text('Column', justification='center')],
                       [sg.Combo(values=columns, enable_events=True,
-                                default_value='None', key='-COL-')],
+                                default_value='None', key='-COL-', disabled=True, tooltip='Print first to enable')],
                       [sg.Text('Row', justification='center')],
                       [sg.Combo(values=rows, enable_events=True, disabled=True,
                                 key='-ROW-')],
@@ -165,32 +230,32 @@ class Admin(User):
                        sg.FileSaveAs(file_types=(('CSV(Comma delimited) files', '*.csv'), ), initial_folder='/tmp', key='-SAVE-')]]
 
         frame_account_layout = [[sg.Text('Personal Details')],
-                                [sg.Text('Client ID:', size=(15, 1)), sg.Text(
+                                [sg.Text('Admin ID:', size=(15, 1)), sg.Text(
                                     key='-ID-')],
                                 [sg.Text('Current Password', size=(15, 1)), sg.Text(
                                     key='-CPASSWD-')],
                                 [sg.Text('New Password', size=(15, 1)), sg.In(
                                     key='-NPASSWD-', do_not_clear=False)],
-                                [sg.Button('Update', disabled=True)]]
+                                [sg.Button('Update', key='-PUPDATE-')]]
 
-        frame_sucreate_layout = [[sg.Text('Login ID', size=(15, 1)), sg.In(key='-SCID-', do_not_clear=False)],
-                                 [sg.Text('Password', size=(15, 1)), sg.In(
-                                     key='-SCPASSWD-', do_not_clear=False)],
-                                 [sg.Button('Create'), sg.Button('Clear')]]
+        frame_create_layout = [[sg.Text('Login ID', size=(15, 1)), sg.In(key='-CRID-', do_not_clear=False)],
+                               [sg.Text('Password', size=(15, 1)), sg.In(
+                                   key='-CRPASSWD-', do_not_clear=False)],
+                               [sg.Button('Create'), sg.Button('Clear')]]
 
-        frame_supdate_layout = [[sg.Text('SuperUser Accounts')],
-                                [sg.Combo(values=su_id, default_value='None',
-                                          enable_events=True, key='-COMBO-')],
-                                [sg.Text('Current Password', size=(15, 1)), sg.Text(
-                                    key='-SUCPASSWD-')],
-                                [sg.Text('New Password', size=(15, 1)), sg.In(
-                                    key='-SUNPASSWD-', do_not_clear=False, disabled=True, disabled_readonly_background_color='grey',)],
-                                [sg.Button('Update', key='-SUPDATE-')]]
+        frame_update_layout = [[sg.Text('SuperUser Accounts')],
+                               [sg.Combo(values=su_id, default_value='None',
+                                         enable_events=True, key='-COMBO-')],
+                               [sg.Text('Current Password', size=(15, 1)), sg.Text(
+                                   key='-CCPASSWD-')],
+                               [sg.Text('New Password', size=(15, 1)), sg.In(
+                                   key='-CNPASSWD-', do_not_clear=False, disabled=True, disabled_readonly_background_color='grey',)],
+                               [sg.Button('Update', key='-GUPDATE-')]]
 
         tab_account_layout = [[sg.Frame(title='Edit Current User', layout=frame_account_layout)],
                               [sg.Frame(title='Create Super User',
-                                        layout=frame_sucreate_layout)],
-                              [sg.Frame(title='Edit Super User', layout=frame_supdate_layout)]]
+                                        layout=frame_create_layout)],
+                              [sg.Frame(title='Edit Super User', layout=frame_update_layout)]]
 
         file_layout = [[sg.Frame(title='Edit CSV', layout=frame_edit)],
                        [sg.Frame(title='Save CSV', layout=frame_save)]]
@@ -205,103 +270,7 @@ class Admin(User):
 
         window = sg.Window('Login', layout=tab_group)
 
-        while True:
-
-            event, values = window.read()
-
-            window['-ID-'].update(self.loginID)
-            window['-CPASSWD-'].update(self.password)
-
-            if event == sg.WIN_CLOSED:
-                break
-
-            if event == 'Print':
-                print(df)
-
-            if event == '-COMBO-':
-                window['-SUNPASSWD-'].update(disabled=False)
-                for i in su_accounts:
-                    if(i.loginID == values['-COMBO-']):
-                        window['-SUCPASSWD-'].update(i.password)
-
-            if event == 'Update':
-                try:
-                    self.password = values['-NPASSWD-']
-                    window['-CPASSWD-'].update(self.password)
-                except:
-                    sg.popup_quick("Error: Missing input!")
-
-            if event == '-SUPDATE-':
-                try:
-                    for i in su_accounts:
-                        if(i.loginID == values['-COMBO-']):
-                            i.password = values['-SUNPASSWD-']
-                            window['-SUCPASSWD-'].update(i.password)
-                except:
-                    sg.popup_quick("Error: Missing input!")
-
-            if event == 'Create':
-                try:
-                    id = values['-SCID-']
-                    passwd = values['-SCPASSWD-']
-
-                    if id not in su_id:
-                        users.append(SuperUser(id, passwd))
-                        for i in users:
-                            if (isinstance(i, SuperUser) and i.loginID not in su_id):
-                                su_accounts.append(i)
-                                su_id.append(i.loginID)
-                    else:
-                        sg.popup_error("ID already exists")
-
-                    window['-COMBO-'].update(values=su_id)
-                    sg.popup_quick_message('Super user created!')
-                    window['-SUNPASSWD-'].update(disabled=True)
-                    window['-SUCPASSWD-'].update(values='')
-
-                except:
-                    sg.popup_quick_message('Error: Missing input!')
-
-            elif event == 'Clear':
-                window['-SCID-'].update('')
-                window['-SCPASSWD-'].update('')
-
-            if event == '-COL-':
-                window['-ROW-'].update(value='',
-                                       disabled=False)
-                window['-CVALUE-'].update('')
-            elif event == '-ROW-':
-
-                column = values['-COL-']
-                row = values['-ROW-']
-
-                value = df.at[row, column]
-
-                window['-CVALUE-'].update(value)
-                window['-NVALUE-'].update(disabled=False)
-                window['-UVALUE-'].update(disabled=False)
-            elif event == '-UVALUE-':
-                try:
-                    new_value = values['-NVALUE-']
-                    df.at[row, column] = new_value
-                    print(df)
-
-                    window['-COL-'].update(value='')
-                    window['-ROW-'].update(value='')
-                    window['-CVALUE-'].update('')
-
-                except:
-                    sg.popup_quick_message('Error: Missing input!')
-
-            if event == 'Save As':
-                filename = values['-SAVE-']
-                df.to_csv(filename)
-
-            if event == 'Logout':
-                window.close()
-                start()
-
-        window.close()
+        User.interface(self, window, columns, su_accounts, su_id)
 
 
 class SuperUser(User):
@@ -323,7 +292,7 @@ class SuperUser(User):
 
         frame_edit = [[sg.Text('Column', justification='center')],
                       [sg.Combo(values=columns, enable_events=True,
-                                default_value='None', key='-COL-')],
+                                default_value='None', key='-COL-', disabled=True, tooltip='Print first to enable')],
                       [sg.Text('Row', justification='center')],
                       [sg.Combo(values=rows, enable_events=True, disabled=True,
                                 key='-ROW-')],
@@ -339,143 +308,46 @@ class SuperUser(User):
                        sg.FileSaveAs(file_types=(('CSV(Comma delimited) files', '*.csv'), ), initial_folder='/tmp', key='-SAVE-')]]
 
         frame_account_layout = [[sg.Text('Personal Details')],
-                                [sg.Text('Client ID:', size=(15, 1)), sg.Text(
+                                [sg.Text('Super User ID:', size=(15, 1)), sg.Text(
                                     key='-ID-')],
                                 [sg.Text('Current Password', size=(15, 1)), sg.Text(
                                     key='-CPASSWD-')],
                                 [sg.Text('New Password', size=(15, 1)), sg.In(
                                     key='-NPASSWD-', do_not_clear=False)],
-                                [sg.Button('Update', disabled=True)]]
+                                [sg.Button('Update')]]
 
-        frame_sucreate_layout = [[sg.Text('Login ID', size=(15, 1)), sg.In(key='-SCID-', do_not_clear=False)],
-                                 [sg.Text('Password', size=(15, 1)), sg.In(
-                                     key='-SCPASSWD-', do_not_clear=False)],
-                                 [sg.Button('Create'), sg.Button('Clear')]]
+        frame_create_layout = [[sg.Text('Login ID', size=(15, 1)), sg.In(key='-CRID-', do_not_clear=False)],
+                               [sg.Text('Password', size=(15, 1)), sg.In(
+                                   key='-CRPASSWD-', do_not_clear=False)],
+                               [sg.Button('Create'), sg.Button('Clear')]]
 
-        frame_supdate_layout = [[sg.Text('SuperUser Accounts')],
-                                [sg.Combo(values=client_id, default_value='None',
-                                          enable_events=True, key='-COMBO-')],
-                                [sg.Text('Current Password', size=(15, 1)), sg.Text(
-                                    key='-SUCPASSWD-')],
-                                [sg.Text('New Password', size=(15, 1)), sg.In(
-                                    key='-SUNPASSWD-', do_not_clear=False, disabled=True, disabled_readonly_background_color='grey',)],
-                                [sg.Button('Update', key='-SUPDATE-')]]
+        frame_update_layout = [[sg.Text('Client Accounts')],
+                               [sg.Combo(values=client_id, default_value='None',
+                                         enable_events=True, key='-COMBO-')],
+                               [sg.Text('Current Password', size=(15, 1)), sg.Text(
+                                   key='-CCPASSWD-')],
+                               [sg.Text('New Password', size=(15, 1)), sg.In(
+                                   key='-CNPASSWD-', do_not_clear=False, disabled=True, disabled_readonly_background_color='grey',)],
+                               [sg.Button('Update', key='-GUPDATE-')]]
 
         tab_account_layout = [[sg.Frame(title='Edit Current User', layout=frame_account_layout)],
-                              [sg.Frame(title='Create Super User',
-                                        layout=frame_sucreate_layout)],
-                              [sg.Frame(title='Edit Super User', layout=frame_supdate_layout)]]
+                              [sg.Frame(title='Create Client',
+                                        layout=frame_create_layout)],
+                              [sg.Frame(title='Edit Client', layout=frame_update_layout)]]
 
         file_layout = [[sg.Frame(title='Edit CSV', layout=frame_edit)],
                        [sg.Frame(title='Save CSV', layout=frame_save)]]
 
-        layout_admin = [[sg.Output(size=(80, 40), key='-OUTPUT-',)],
-                        [sg.Button('Print'), sg.Button('Logout')]]
+        layout_su = [[sg.Output(size=(80, 40), key='-OUTPUT-',)],
+                     [sg.Button('Print'), sg.Button('Logout')]]
 
-        main_layout = [[sg.Column(layout_admin), sg.Column(file_layout)]]
+        main_layout = [[sg.Column(layout_su), sg.Column(file_layout)]]
 
         tab_group = [[sg.TabGroup([[sg.Tab('Main', main_layout), sg.Tab(
             'Account Management', tab_account_layout)]], tab_location='lefttop', selected_title_color='blue', border_width=5)]]
 
         window = sg.Window('Login', layout=tab_group)
-
-        while True:
-
-            event, values = window.read()
-
-            window['-ID-'].update(self.loginID)
-            window['-CPASSWD-'].update(self.password)
-
-            if event == sg.WIN_CLOSED:
-                break
-
-            if event == 'Print':
-                print(df)
-
-            if event == '-COMBO-':
-                window['-SUNPASSWD-'].update(disabled=False)
-                for i in client_accounts:
-                    if(i.loginID == values['-COMBO-']):
-                        window['-SUCPASSWD-'].update(i.password)
-
-            if event == 'Update':
-                try:
-                    self.password = values['-NPASSWD-']
-                    window['-CPASSWD-'].update(self.password)
-                except:
-                    sg.popup_quick("Error: Missing input!")
-
-            if event == '-SUPDATE-':
-                try:
-                    for i in client_accounts:
-                        if(i.loginID == values['-COMBO-']):
-                            i.password = values['-SUNPASSWD-']
-                            window['-SUCPASSWD-'].update(i.password)
-                except:
-                    sg.popup_quick("Error: Missing input!")
-
-            if event == 'Create':
-                try:
-                    id = values['-SCID-']
-                    passwd = values['-SCPASSWD-']
-
-                    if id not in client_id:
-                        users.append(SuperUser(id, passwd))
-                        for i in users:
-                            if (isinstance(i, SuperUser) and i.loginID not in client_id):
-                                client_accounts.append(i)
-                                client_id.append(i.loginID)
-                    else:
-                        sg.popup_error("ID already exists")
-
-                    window['-COMBO-'].update(values=client_id)
-                    sg.popup_quick_message('Super user created!')
-                    window['-SUNPASSWD-'].update(disabled=True)
-                    window['-SUCPASSWD-'].update(values='')
-
-                except:
-                    sg.popup_quick_message('Error: Missing input!')
-
-            elif event == 'Clear':
-                window['-SCID-'].update('')
-                window['-SCPASSWD-'].update('')
-
-            if event == '-COL-':
-                window['-ROW-'].update(value='',
-                                       disabled=False)
-                window['-CVALUE-'].update('')
-            elif event == '-ROW-':
-
-                column = values['-COL-']
-                row = values['-ROW-']
-
-                value = df.at[row, column]
-
-                window['-CVALUE-'].update(value)
-                window['-NVALUE-'].update(disabled=False)
-                window['-UVALUE-'].update(disabled=False)
-            elif event == '-UVALUE-':
-                try:
-                    new_value = values['-NVALUE-']
-                    df.at[row, column] = new_value
-                    print(df)
-
-                    window['-COL-'].update(value='')
-                    window['-ROW-'].update(value='')
-                    window['-CVALUE-'].update('')
-
-                except:
-                    sg.popup_quick_message('Error: Missing input!')
-
-            if event == 'Save As':
-                filename = values['-SAVE-']
-                df.to_csv(filename)
-
-            if event == 'Logout':
-                window.close()
-                start()
-
-        window.close()
+        User.interface(self, window, columns, client_accounts, client_id)
 
 
 def start():
